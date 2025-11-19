@@ -1,1 +1,255 @@
-game
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Змейка — простая игра</title>
+  <style>
+    :root{--bg:#0f1724;--panel:#0b1220;--accent:#16a34a;--muted:#94a3b8;--danger:#ef4444}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Arial;background:var(--bg);color:#e6eef8}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;box-sizing:border-box}
+    .game-card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(2,6,23,0.6);width:min(720px,95vw)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{font-size:18px;margin:0;color:#f8fafc}
+    .info{display:flex;gap:12px;align-items:center}
+    .score{background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;font-weight:600;color:var(--accent)}
+    .small{font-size:12px;color:var(--muted)}
+    canvas{display:block;background:linear-gradient(180deg,#071028 0%, #081425 100%);border-radius:8px;width:100%;height:480px}
+    .controls{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .hint{color:var(--muted);font-size:13px}
+    footer{margin-top:10px;color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="game-card">
+      <header>
+        <h1>Змейка — простая версия</h1>
+        <div class="info">
+          <div class="score" id="score">Очки: 0</div>
+          <div class="small" id="status">Готово</div>
+        </div>
+      </header>
+
+      <canvas id="game" width="640" height="480"></canvas>
+
+      <div class="controls">
+        <button class="btn" id="startBtn">Старт</button>
+        <button class="btn" id="pauseBtn">Пауза</button>
+        <button class="btn" id="restartBtn">Перезапустить</button>
+        <div class="hint">Управление: стрелки ◄ ► ▲ ▼ — пауза: пробел — рестарт: R</div>
+      </div>
+      <footer>Простая змейка: тело — квадраты, фрукт — круг. Сделано для обучения.</footer>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    // Logical grid size (cells)
+    const COLS = 32; // 640/20 = 32
+    const ROWS = 24; // 480/20 = 24
+    const CELL = Math.floor(canvas.width / COLS);
+
+    let snake = [{x: 8, y: 12}]; // initial head
+    let dir = {x:1, y:0};
+    let nextDir = {x:1,y:0};
+    let fruit = null;
+    let score = 0;
+    let running = false;
+    let gameOver = false;
+    const speed = 8; // moves per second
+    let accumulator = 0;
+    let lastTime = 0;
+
+    const scoreEl = document.getElementById('score');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    function reset(){
+      snake = [{x: Math.floor(COLS/2)-2, y: Math.floor(ROWS/2)}];
+      dir = {x:1,y:0};
+      nextDir = {x:1,y:0};
+      score = 0;
+      gameOver = false;
+      running = false;
+      fruit = spawnFruit();
+      updateUI();
+      draw();
+    }
+
+    function spawnFruit(){
+      // choose random empty cell
+      const occupied = new Set(snake.map(s => `${s.x},${s.y}`));
+      let tries = 0;
+      while(tries < 1000){
+        const fx = Math.floor(Math.random()*COLS);
+        const fy = Math.floor(Math.random()*ROWS);
+        if(!occupied.has(`${fx},${fy}`)) return {x:fx,y:fy};
+        tries++;
+      }
+      return null;
+    }
+
+    function updateUI(){
+      scoreEl.textContent = `Очки: ${score}`;
+      statusEl.textContent = gameOver ? 'Игра окончена' : (running ? 'Игра идёт' : 'Пауза');
+    }
+
+    function step(){
+      if(gameOver || !running) return;
+      // update direction
+      dir = nextDir;
+      const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
+      // wrap-around behavior? we'll block at walls -> game over
+      if(head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS){
+        return endGame();
+      }
+      // self-collision
+      for(let i=0;i<snake.length;i++){
+        if(snake[i].x === head.x && snake[i].y === head.y) return endGame();
+      }
+      // add head
+      snake.unshift(head);
+      // check fruit
+      if(fruit && head.x === fruit.x && head.y === fruit.y){
+        score += 1;
+        fruit = spawnFruit();
+        // when fruit eaten, we DO NOT remove tail -> grows by 1
+      } else {
+        // move: remove tail
+        snake.pop();
+      }
+      updateUI();
+    }
+
+    function endGame(){
+      gameOver = true; running = false;
+      updateUI();
+      draw();
+    }
+
+    function draw(){
+      // clear
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // background grid (subtle)
+      ctx.fillStyle = '#07142a';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // draw fruit as circle
+      if(fruit){
+        const cx = fruit.x*CELL + CELL/2;
+        const cy = fruit.y*CELL + CELL/2;
+        const r = Math.max(4, CELL*0.4);
+        ctx.beginPath();
+        ctx.fillStyle = '#ff6b6b';
+        ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.fill();
+        // small shine
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.arc(cx - r*0.35, cy - r*0.45, Math.max(1, r*0.25), 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      // draw snake segments as rounded squares
+      for(let i=0;i<snake.length;i++){
+        const s = snake[i];
+        const x = s.x*CELL + 2;
+        const y = s.y*CELL + 2;
+        const size = CELL - 4;
+        // color gradient along tail
+        const t = i / Math.max(1, snake.length-1);
+        const r = Math.round(22 + (120-22)*(1-t));
+        const g = Math.round(160 + (220-160)*(1-t));
+        const b = Math.round(82 + (140-82)*(1-t));
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        roundRect(ctx, x, y, size, size, 6);
+        ctx.fill();
+        // head eye
+        if(i===0){
+          const ex = x + size/2 + dir.x*size*0.15;
+          const ey = y + size/2 + dir.y*size*0.15;
+          ctx.fillStyle = '#052018';
+          ctx.beginPath();
+          ctx.arc(ex - size*0.12, ey - size*0.12, Math.max(2, size*0.07), 0, Math.PI*2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(ex + size*0.06, ey + size*0.06, Math.max(1, size*0.04), 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.fill();
+        }
+      }
+
+      // overlay grid lines optional — commented out for clarity
+      // draw border
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0.5,0.5,canvas.width-1,canvas.height-1);
+    }
+
+    function roundRect(ctx,x,y,w,h,r){
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.arcTo(x+w, y, x+w, y+h, r);
+      ctx.arcTo(x+w, y+h, x, y+h, r);
+      ctx.arcTo(x, y+h, x, y, r);
+      ctx.arcTo(x, y, x+w, y, r);
+      ctx.closePath();
+    }
+
+    function loop(time){
+      if(!lastTime) lastTime = time;
+      const dt = (time - lastTime) / 1000;
+      lastTime = time;
+      accumulator += dt;
+      const stepT = 1 / speed;
+      while(accumulator >= stepT){
+        step();
+        accumulator -= stepT;
+      }
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // input
+    window.addEventListener('keydown', e => {
+      if(e.key === 'ArrowUp' || e.key === 'w') setDir(0,-1);
+      if(e.key === 'ArrowDown' || e.key === 's') setDir(0,1);
+      if(e.key === 'ArrowLeft' || e.key === 'a') setDir(-1,0);
+      if(e.key === 'ArrowRight' || e.key === 'd') setDir(1,0);
+      if(e.code === 'Space') togglePause();
+      if(e.key === 'r' || e.key === 'R') reset();
+    });
+
+    function setDir(x,y){
+      // prevent reversing directly
+      if(dir.x === -x && dir.y === -y) return;
+      nextDir = {x,y};
+      // if game isn't running, start it on first move
+      if(!running && !gameOver){ running = true; updateUI(); }
+    }
+
+    function togglePause(){
+      if(gameOver) return;
+      running = !running;
+      updateUI();
+    }
+
+    startBtn.addEventListener('click', ()=>{ if(!gameOver) running = true; updateUI(); });
+    pauseBtn.addEventListener('click', ()=>{ running = false; updateUI(); });
+    restartBtn.addEventListener('click', ()=>{ reset(); running = true; updateUI(); });
+
+    // start
+    reset();
+    requestAnimationFrame(loop);
+
+  })();
+  </script>
+</body>
+</html>
